@@ -1,0 +1,34 @@
+#Landon Norris
+#Exam 3 Problem 1
+import numpy as np
+
+
+class TakeoffModel:
+    def __init__(self):
+        self.S = 1000
+        self.CLmax = 2.4
+        self.CD = 0.0279
+        self.rho = 0.002377
+        self.gc = 32.174
+
+    def stall_velocity(self, weight):
+        return np.sqrt(weight / (0.5 * self.rho * self.S * self.CLmax))
+
+    def takeoff_velocity(self, weight):
+        return 1.2 * self.stall_velocity(weight)
+
+    def get_A(self, weight, thrust):
+        return self.gc * (thrust / weight)
+
+    def get_B(self, weight):
+        return (self.gc / weight) * (0.5 * self.rho * self.S * self.CD)
+
+    def takeoff_distance(self, weight, thrust):
+        v_to = self.takeoff_velocity(weight)
+        A = self.get_A(weight, thrust)
+        B = self.get_B(weight)
+
+        if A <= B * v_to**2:
+            return np.nan
+
+        return (-1 / (2 * B)) * np.log((A - B * v_to**2) / A)

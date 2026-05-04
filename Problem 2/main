@@ -1,0 +1,72 @@
+#Landon Norris
+# Exam 3 Problem 2
+import numpy as np
+from Polymer import macroMolecule, Position
+
+
+def mean(values):
+    return sum(values) / len(values)
+
+
+def std_dev(values):
+    avg = mean(values)
+    return (sum((x - avg) ** 2 for x in values) / (len(values) - 1)) ** 0.5
+
+
+def main():
+    N_target = int(input("degree of polymerization (1000)?: ") or 1000)
+    num_molecules = int(input("How many molecules (50)?: ") or 50)
+
+    N_values = np.random.normal(
+        loc=N_target,
+        scale=0.1 * N_target,
+        size=num_molecules
+    )
+
+    N_values = [max(1, int(round(N))) for N in N_values]
+
+    centers = []
+    end_to_end_values = []
+    radius_gyration_values = []
+    molecular_weights = []
+
+    for N in N_values:
+        polymer = macroMolecule(degreeOfPolymerization=N)
+        polymer.freelyJointedChainModel()
+
+        centers.append(polymer.centerOfMass)
+        end_to_end_values.append(polymer.endToEndDistance)
+        radius_gyration_values.append(polymer.radiusOfGyration)
+        molecular_weights.append(polymer.MW)
+
+    avg_center = Position()
+
+    for center in centers:
+        avg_center += center
+
+    avg_center = avg_center / num_molecules
+
+    end_to_end_um = [value * 1e6 for value in end_to_end_values]
+    radius_gyration_um = [value * 1e6 for value in radius_gyration_values]
+
+    Mn = mean(molecular_weights)
+    Mw = sum(MW ** 2 for MW in molecular_weights) / sum(molecular_weights)
+    PDI = Mw / Mn
+
+    print()
+    print(f"Metrics for {num_molecules} molecules of degree of polymerization = {N_target}")
+    print(f"Avg. Center of Mass (nm) = {avg_center.x * 1e9:.3f}, {avg_center.y * 1e9:.3f}, {avg_center.z * 1e9:.3f}")
+
+    print("End-to-end distance (um):")
+    print(f"   Average = {mean(end_to_end_um):.3f}")
+    print(f"   Std. Dev. = {std_dev(end_to_end_um):.3f}")
+
+    print("Radius of gyration (um):")
+    print(f"   Average = {mean(radius_gyration_um):.3f}")
+    print(f"   Std. Dev. = {std_dev(radius_gyration_um):.3f}")
+
+    print(f"PDI = {PDI:.2f}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,87 @@
+# Landon Norris
+# Exam 3 Problem 1
+import sys
+import numpy as np
+from PyQt5.QtWidgets import QApplication
+from airplane_model import TakeoffModel
+from airplane_view import TakeoffView
+
+
+class TakeoffController:
+    def __init__(self, model, view):
+        self.model = model
+        self.view = view
+
+        self.view.calculate_button.clicked.connect(self.calculate)
+        self.calculate()
+
+    def calculate(self):
+        weight = float(self.view.weight_input.text())
+        thrust = float(self.view.thrust_input.text())
+
+        thrust_values = np.linspace(5000, 30000, 300)
+
+        weights = [
+            weight - 10000,
+            weight,
+            weight + 10000
+        ]
+
+        labels = [
+            f"W - 10,000 = {weight - 10000:,.0f}",
+            f"W = {weight:,.0f}",
+            f"W + 10,000 = {weight + 10000:,.0f}"
+        ]
+
+        self.view.figure.clear()
+        ax = self.view.figure.add_subplot(111)
+
+        for w, label in zip(weights, labels):
+            distances = [
+                self.model.takeoff_distance(w, t)
+                for t in thrust_values
+            ]
+            ax.plot(thrust_values, distances, label=label)
+
+        selected_distance = self.model.takeoff_distance(weight, thrust)
+
+        ax.plot(
+            thrust,
+            selected_distance,
+            "ro",
+            markersize=8,
+            markerfacecolor="none",
+            markeredgewidth=2
+        )
+
+        vstall = self.model.stall_velocity(weight)
+        vto = self.model.takeoff_velocity(weight)
+        A = self.model.get_A(weight, thrust)
+        B = self.model.get_B(weight)
+
+        self.view.vstall_label.setText(f"{vstall:.2f} ft/s")
+        self.view.vto_label.setText(f"{vto:.2f} ft/s")
+        self.view.a_label.setText(f"{A:.5f}")
+        self.view.b_label.setText(f"{B:.6f}")
+        self.view.sto_label.setText(f"{selected_distance:.2f} ft")
+
+        ax.set_title("Takeoff Distance vs Thrust", fontweight="bold")
+        ax.set_xlabel("Thrust (lb)")
+        ax.set_ylabel("STO (ft)")
+        ax.grid(True)
+        ax.legend()
+
+        self.view.canvas.draw()
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+
+    model = TakeoffModel()
+    view = TakeoffView()
+    controller = TakeoffController(model, view)
+
+    view.resize(865, 640)
+    view.show()
+
+    sys.exit(app.exec_())

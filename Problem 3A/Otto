@@ -1,0 +1,344 @@
+# Landon Norris
+# Exam 3 Problem 3A
+#region imports
+from Air import *
+from matplotlib import pyplot as plt
+from PyQt5 import QtWidgets as qtw
+import numpy as np
+#endregion
+
+
+class ottoCycleModel():
+    def __init__(self):
+        self.units = units()
+        self.air = air()
+
+        self.p_initial = 101325.0
+        self.T_initial = 300.0
+        self.T_high = 2000.0
+        self.Ratio = 8.0
+        self.V_Cylinder = 0.02
+
+        self.State1 = None
+        self.State2 = None
+        self.State3 = None
+        self.State4 = None
+
+        self.W_Compression = 0.0
+        self.W_Power = 0.0
+        self.Q_In = 0.0
+        self.Q_Out = 0.0
+        self.W_Cycle = 0.0
+        self.Eff = 0.0
+
+        self.upperCurve = StateDataForPlotting()
+        self.lowerCurve = StateDataForPlotting()
+        self.calculated = False
+        self.cycleType = "otto"
+        self.name = "Otto Cycle"
+
+    def getSI(self):
+        return self.units.SI
+
+
+class ottoCycleController():
+    def __init__(self, model=None, ax=None):
+        self.model = ottoCycleModel() if model is None else model
+        self.view = ottoCycleView()
+        self.view.ax = ax
+
+    def setWidgets(self, w=None):
+        [
+            self.view.lbl_THigh, self.view.lbl_TLow, self.view.lbl_P0, self.view.lbl_V0, self.view.lbl_CR,
+            self.view.le_THigh, self.view.le_TLow, self.view.le_P0, self.view.le_V0, self.view.le_CR,
+            self.view.le_T1, self.view.le_T2, self.view.le_T3, self.view.le_T4,
+            self.view.lbl_T1Units, self.view.lbl_T2Units, self.view.lbl_T3Units, self.view.lbl_T4Units,
+            self.view.le_PowerStroke, self.view.le_CompressionStroke, self.view.le_HeatAdded, self.view.le_Efficiency,
+            self.view.lbl_PowerStrokeUnits, self.view.lbl_CompressionStrokeUnits, self.view.lbl_HeatInUnits,
+            self.view.rdo_Metric, self.view.cmb_Abcissa, self.view.cmb_Ordinate,
+            self.view.chk_LogAbcissa, self.view.chk_LogOrdinate, self.view.ax, self.view.canvas
+        ] = w
+
+    def calc(self):
+        T0 = float(self.view.le_TLow.text())
+        P0 = float(self.view.le_P0.text())
+        V0 = float(self.view.le_V0.text())
+        TH = float(self.view.le_THigh.text())
+        CR = float(self.view.le_CR.text())
+        metric = self.view.rdo_Metric.isChecked()
+
+        self.set(T_0=T0, P_0=P0, V_0=V0, T_High=TH, ratio=CR, SI=metric)
+
+    def set(self, T_0=300.0, P_0=101325.0, V_0=0.02, T_High=2000.0, ratio=8.0, SI=True):
+        self.model.units.set(SI=SI)
+
+        if SI:
+            self.model.T_initial = T_0
+            self.model.p_initial = P_0
+            self.model.V_Cylinder = V_0
+            self.model.T_high = T_High
+        else:
+            self.model.T_initial = self.model.units.T_RtoK(T_0)
+            self.model.p_initial = P_0 / self.model.units.CF_P
+            self.model.V_Cylinder = V_0 / self.model.units.CF_V
+            self.model.T_high = self.model.units.T_RtoK(T_High)
+
+        self.model.Ratio = ratio
+
+        self.model.State1 = self.model.air.set(
+            P=self.model.p_initial,
+            T=self.model.T_initial,
+            name="State 1 - BDC"
+        )
+
+        self.model.air.n = self.model.V_Cylinder / self.model.State1.v
+        self.model.air.m = self.model.air.n * self.model.air.MW
+
+        self.model.State2 = self.model.air.set(
+            v=self.model.State1.v / self.model.Ratio,
+            s=self.model.State1.s,
+            name="State 2 - TDC"
+        )
+
+        self.model.State3 = self.model.air.set(
+            T=self.model.T_high,
+            v=self.model.State2.v,
+            name="State 3 - TDC"
+        )
+
+        self.model.State4 = self.model.air.set(
+            v=self.model.State1.v,
+            s=self.model.State3.s,
+            name="State 4 - BDC"
+        )
+
+        # These are molar energies. Do NOT multiply by n here.
+        self.model.W_Compression = self.model.State2.u - self.model.State1.u
+        self.model.W_Power = self.model.State3.u - self.model.State4.u
+        self.model.Q_In = self.model.State3.u - self.model.State2.u
+        self.model.Q_Out = self.model.State4.u - self.model.State1.u
+
+        self.model.W_Cycle = self.model.W_Power - self.model.W_Compression
+        self.model.Eff = 100.0 * self.model.W_Cycle / self.model.Q_In
+
+        self.model.calculated = True
+
+        self.buildDataForPlotting()
+        self.updateView()
+
+    def buildDataForPlotting(self):
+        self.model.upperCurve.clear()
+        self.model.lowerCurve.clear()
+
+        a = air()
+
+        DeltaT = np.linspace(self.model.State2.T, self.model.State3.T, 30)
+        for T in DeltaT:
+            state = a.set(T=T, v=self.model.State2.v)
+            self.model.upperCurve.add((state.T, state.P, state.u, state.h, state.s, state.v))
+
+        DeltaV = np.linspace(self.model.State3.v, self.model.State4.v, 30)
+        for v in DeltaV:
+            state = a.set(v=v, s=self.model.State3.s)
+            self.model.upperCurve.add((state.T, state.P, state.u, state.h, state.s, state.v))
+
+        DeltaT = np.linspace(self.model.State4.T, self.model.State1.T, 30)
+        for T in DeltaT:
+            state = a.set(T=T, v=self.model.State4.v)
+            self.model.upperCurve.add((state.T, state.P, state.u, state.h, state.s, state.v))
+
+        DeltaV = np.linspace(self.model.State1.v, self.model.State2.v, 30)
+        for v in DeltaV:
+            state = a.set(v=v, s=self.model.State1.s)
+            self.model.lowerCurve.add((state.T, state.P, state.u, state.h, state.s, state.v))
+
+    def updateView(self):
+        self.view.updateView(self.model)
+
+
+class ottoCycleView():
+    def __init__(self):
+        self.lbl_THigh = qtw.QLabel()
+        self.lbl_TLow = qtw.QLabel()
+        self.lbl_P0 = qtw.QLabel()
+        self.lbl_V0 = qtw.QLabel()
+        self.lbl_CR = qtw.QLabel()
+
+        self.le_THigh = qtw.QLineEdit()
+        self.le_TLow = qtw.QLineEdit()
+        self.le_P0 = qtw.QLineEdit()
+        self.le_V0 = qtw.QLineEdit()
+        self.le_CR = qtw.QLineEdit()
+
+        self.le_T1 = qtw.QLineEdit()
+        self.le_T2 = qtw.QLineEdit()
+        self.le_T3 = qtw.QLineEdit()
+        self.le_T4 = qtw.QLineEdit()
+
+        self.lbl_T1Units = qtw.QLabel()
+        self.lbl_T2Units = qtw.QLabel()
+        self.lbl_T3Units = qtw.QLabel()
+        self.lbl_T4Units = qtw.QLabel()
+
+        self.le_Efficiency = qtw.QLineEdit()
+        self.le_PowerStroke = qtw.QLineEdit()
+        self.le_CompressionStroke = qtw.QLineEdit()
+        self.le_HeatAdded = qtw.QLineEdit()
+
+        self.lbl_PowerStrokeUnits = qtw.QLabel()
+        self.lbl_CompressionStrokeUnits = qtw.QLabel()
+        self.lbl_HeatInUnits = qtw.QLabel()
+
+        self.rdo_Metric = qtw.QRadioButton()
+        self.cmb_Abcissa = qtw.QComboBox()
+        self.cmb_Ordinate = qtw.QComboBox()
+        self.chk_LogAbcissa = qtw.QCheckBox()
+        self.chk_LogOrdinate = qtw.QCheckBox()
+
+        self.ax = None
+        self.canvas = None
+
+    def updateView(self, cycle):
+        cycle.units.set(SI=self.rdo_Metric.isChecked())
+
+        self.updateDisplayWidgets(cycle)
+
+        if cycle.calculated:
+            self.plot_cycle_XY(
+                cycle,
+                X=self.cmb_Abcissa.currentText(),
+                Y=self.cmb_Ordinate.currentText(),
+                logx=self.chk_LogAbcissa.isChecked(),
+                logy=self.chk_LogOrdinate.isChecked(),
+                total=True
+            )
+
+    def convertDataCol(self, cycle, data=None, colName="T", total=True):
+        UC = cycle.units
+        n = cycle.air.n
+        TCF = 1.0 if UC.SI else UC.CF_T
+        PCF = 1.0 if UC.SI else UC.CF_P
+        vCF = 1.0 if UC.SI else UC.CF_V
+        eCF = 1.0 if UC.SI else UC.CF_E
+        sCF = 1.0 if UC.SI else UC.CF_s
+
+        w = colName.lower()
+
+        if w == "t":
+            return [T * TCF for T in data]
+        if w == "p":
+            return [P * PCF for P in data]
+        if w == "v":
+            return [v * n * vCF for v in data]
+        if w == "u":
+            return [u * n * eCF for u in data]
+        if w == "h":
+            return [h * n * eCF for h in data]
+        if w == "s":
+            return [s * n * sCF for s in data]
+
+    def getAxisLabel(self, cycle, var):
+        SI = cycle.units.SI
+        v = var.lower()
+
+        if v == "v":
+            return "Volume" if SI else "V (ft$^3$)"
+        if v == "p":
+            return "Pressure" if SI else "P (atm)"
+        if v == "t":
+            return "Temperature" if SI else "T (R)"
+        if v == "s":
+            return "Entropy"
+        if v == "u":
+            return "Internal Energy"
+        if v == "h":
+            return "Enthalpy"
+
+        return var
+
+    def plot_cycle_XY(self, cycle, X="v", Y="P", logx=False, logy=False, total=True):
+        if X == Y:
+            return
+
+        ax = self.ax
+        ax.clear()
+
+        ax.set_xscale("log" if logx else "linear")
+        ax.set_yscale("log" if logy else "linear")
+
+        X_lower = self.convertDataCol(cycle, cycle.lowerCurve.getDataCol(X), X, total)
+        Y_lower = self.convertDataCol(cycle, cycle.lowerCurve.getDataCol(Y), Y, total)
+
+        X_upper = self.convertDataCol(cycle, cycle.upperCurve.getDataCol(X), X, total)
+        Y_upper = self.convertDataCol(cycle, cycle.upperCurve.getDataCol(Y), Y, total)
+
+        ax.plot(X_lower, Y_lower, color="k")
+        ax.plot(X_upper, Y_upper, color="g")
+
+        states = [cycle.State1, cycle.State2, cycle.State3, cycle.State4]
+
+        for state in states:
+            x = self.convertStateValue(cycle, state, X)
+            y = self.convertStateValue(cycle, state, Y)
+            ax.plot(x, y, marker="o", markerfacecolor="w", markeredgecolor="k")
+
+        ax.set_title("Otto Cycle")
+        ax.set_xlabel(self.getAxisLabel(cycle, X))
+        ax.set_ylabel(self.getAxisLabel(cycle, Y))
+        ax.tick_params(axis="both", which="both", direction="in", top=True, right=True)
+
+        self.canvas.draw()
+
+    def convertStateValue(self, cycle, state, var):
+        UC = cycle.units
+        n = cycle.air.n
+        w = var.lower()
+
+        if w == "t":
+            return state.T if UC.SI else UC.T_KtoR(state.T)
+        if w == "p":
+            return state.P if UC.SI else state.P * UC.CF_P
+        if w == "v":
+            return state.v * n if UC.SI else state.v * n * UC.CF_V
+        if w == "u":
+            return state.u * n if UC.SI else state.u * n * UC.CF_E
+        if w == "h":
+            return state.h * n if UC.SI else state.h * n * UC.CF_E
+        if w == "s":
+            return state.s * n
+
+    def updateDisplayWidgets(self, Model):
+        U = Model.units
+        SI = U.SI
+
+        self.lbl_THigh.setText("T High ({})".format("K" if SI else "R"))
+        self.lbl_TLow.setText("T Low ({})".format("K" if SI else "R"))
+        self.lbl_P0.setText("P0 ({})".format("Pa" if SI else "atm"))
+        self.lbl_V0.setText("Cylinder V ({})".format("m^3" if SI else "ft^3"))
+
+        for label in [self.lbl_T1Units, self.lbl_T2Units, self.lbl_T3Units, self.lbl_T4Units]:
+            label.setText("K" if SI else "R")
+
+        self.lbl_PowerStrokeUnits.setText("J" if SI else "Btu")
+        self.lbl_CompressionStrokeUnits.setText("J" if SI else "Btu")
+        self.lbl_HeatInUnits.setText("J" if SI else "Btu")
+
+        if not Model.calculated:
+            return
+
+        eCF = 1.0 if SI else U.CF_E
+
+        T1 = Model.State1.T if SI else U.T_KtoR(Model.State1.T)
+        T2 = Model.State2.T if SI else U.T_KtoR(Model.State2.T)
+        T3 = Model.State3.T if SI else U.T_KtoR(Model.State3.T)
+        T4 = Model.State4.T if SI else U.T_KtoR(Model.State4.T)
+
+        self.le_T1.setText("{:0.2f}".format(T1))
+        self.le_T2.setText("{:0.2f}".format(T2))
+        self.le_T3.setText("{:0.2f}".format(T3))
+        self.le_T4.setText("{:0.2f}".format(T4))
+
+        self.le_PowerStroke.setText("{:0.3f}".format(Model.air.n * Model.W_Power * eCF))
+        self.le_CompressionStroke.setText("{:0.3f}".format(Model.air.n * Model.W_Compression * eCF))
+        self.le_HeatAdded.setText("{:0.3f}".format(Model.air.n * Model.Q_In * eCF))
+        self.le_Efficiency.setText("{:0.3f}".format(Model.Eff))

@@ -1,0 +1,139 @@
+#Landon Norris
+# Exam 3 Problem 3B
+# #region imports
+from OttoDiesel_GUI import Ui_Form
+import sys
+from PyQt5 import QtWidgets as qtw
+from Otto import ottoCycleController
+from Diesel import dieselCycleController
+from Dual import dualCycleController
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
+#endregion
+
+
+class MainWindow(qtw.QWidget, Ui_Form):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
+
+        self.figure = Figure(figsize=(8, 8), tight_layout=True, frameon=True, facecolor='none')
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.ax = self.figure.add_subplot()
+        self.main_VerticalLayout.addWidget(self.canvas)
+
+        # add Dual cycle to combo box if it is not already there
+        found_dual = False
+        for i in range(self.cmb_OttoDiesel.count()):
+            if "dual" in self.cmb_OttoDiesel.itemText(i).lower():
+                found_dual = True
+        if not found_dual:
+            self.cmb_OttoDiesel.addItem("Dual cycle")
+
+        # extra input needed for dual cycle
+        self.lbl_DualExtra = qtw.QLabel("Cutoff Ratio")
+        self.le_DualExtra = qtw.QLineEdit("1.2")
+
+        try:
+            self.gridLayout.addWidget(self.lbl_DualExtra, 5, 0)
+            self.gridLayout.addWidget(self.le_DualExtra, 5, 1)
+        except Exception:
+            pass
+
+        self.otto = ottoCycleController(ax=self.ax)
+        self.diesel = dieselCycleController(ax=self.ax)
+        self.dual = dualCycleController(ax=self.ax)
+
+        self.controller = self.otto
+
+        self.someWidgets = []
+        self.someWidgets += [self.lbl_THigh, self.lbl_TLow, self.lbl_P0, self.lbl_V0, self.lbl_CR]
+        self.someWidgets += [self.le_THigh, self.le_TLow, self.le_P0, self.le_V0, self.le_CR]
+        self.someWidgets += [self.le_T1, self.le_T2, self.le_T3, self.le_T4]
+        self.someWidgets += [self.lbl_T1Units, self.lbl_T2Units, self.lbl_T3Units, self.lbl_T4Units]
+        self.someWidgets += [self.le_PowerStroke, self.le_CompressionStroke, self.le_HeatAdded, self.le_Efficiency]
+        self.someWidgets += [self.lbl_PowerStrokeUnits, self.lbl_CompressionStrokeUnits, self.lbl_HeatInUnits]
+        self.someWidgets += [self.rdo_Metric, self.cmb_Abcissa, self.cmb_Ordinate]
+        self.someWidgets += [self.chk_LogAbcissa, self.chk_LogOrdinate, self.ax, self.canvas]
+
+        self.otto.setWidgets(w=self.someWidgets)
+        self.diesel.setWidgets(w=self.someWidgets)
+        self.dual.setWidgets(w=self.someWidgets, extra=self.le_DualExtra)
+
+        self.rdo_Metric.toggled.connect(self.setUnits)
+        self.rdo_English.toggled.connect(self.setUnits)
+        self.btn_Calculate.clicked.connect(self.calcCycle)
+        self.cmb_Abcissa.currentIndexChanged.connect(self.doPlot)
+        self.cmb_Ordinate.currentIndexChanged.connect(self.doPlot)
+        self.chk_LogAbcissa.stateChanged.connect(self.doPlot)
+        self.chk_LogOrdinate.stateChanged.connect(self.doPlot)
+        self.cmb_OttoDiesel.currentIndexChanged.connect(self.selectCycle)
+
+        self.selectCycle()
+        self.show()
+
+    def doPlot(self):
+        self.controller.updateView()
+
+    def selectCycle(self):
+        txt = self.cmb_OttoDiesel.currentText().lower()
+
+        if "otto" in txt:
+            self.controller = self.otto
+            self.gb_Input.setTitle("Input for Air Standard Otto Cycle")
+            self.lbl_THigh.setText("T High (R)" if self.rdo_English.isChecked() else "T High (K)")
+            self.le_THigh.setText("3600.0" if self.rdo_English.isChecked() else "2000.0")
+            self.lbl_V0.setText("Cylinder V (ft^3)" if self.rdo_English.isChecked() else "Cylinder V (m^3)")
+            self.le_V0.setText("0.02")
+            self.le_CR.setText("8.0")
+            self.lbl_DualExtra.hide()
+            self.le_DualExtra.hide()
+
+        elif "diesel" in txt:
+            self.controller = self.diesel
+            self.gb_Input.setTitle("Input for Air Standard Diesel Cycle")
+            self.lbl_THigh.setText("Cutoff Ratio")
+            self.le_THigh.setText("2.0")
+            self.lbl_V0.setText("Cylinder V (ft^3)" if self.rdo_English.isChecked() else "Cylinder V (m^3)")
+            self.le_V0.setText("0.02")
+            self.le_CR.setText("18.0")
+            self.lbl_DualExtra.hide()
+            self.le_DualExtra.hide()
+
+        else:
+            self.controller = self.dual
+            self.gb_Input.setTitle("Input for Air Standard Dual Cycle")
+            self.lbl_THigh.setText("P3 / P2")
+            self.le_THigh.setText("1.5")
+            self.lbl_V0.setText("Cylinder V (ft^3)" if self.rdo_English.isChecked() else "Cylinder V (m^3)")
+            self.le_V0.setText("0.02")
+            self.le_CR.setText("18.0")
+            self.lbl_DualExtra.show()
+            self.le_DualExtra.show()
+            self.le_DualExtra.setText("1.2")
+
+        self.controller.updateView()
+
+    def setUnits(self):
+        txt = self.cmb_OttoDiesel.currentText().lower()
+
+        if "diesel" in txt:
+            self.lbl_THigh.setText("Cutoff Ratio")
+            self.le_THigh.setText("2.0")
+
+        if "dual" in txt:
+            self.lbl_THigh.setText("P3 / P2")
+            self.le_THigh.setText("1.5")
+            self.le_DualExtra.setText("1.2")
+
+        self.controller.updateView()
+
+    def calcCycle(self):
+        self.controller.calc()
+
+
+if __name__ == "__main__":
+    app = qtw.QApplication(sys.argv)
+    mw = MainWindow()
+    mw.setWindowTitle("Otto/Diesel/Dual Cycle Calculator")
+    sys.exit(app.exec())
